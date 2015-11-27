@@ -1,11 +1,5 @@
 import os
-
 from hypchat import HypChat
-
-TOKEN = ''
-
-
-hipchat = HypChat(TOKEN)
 
 
 class BaseFilter(object):
@@ -69,11 +63,15 @@ class BaseBackend(object):
         This returns the id of the last message that was saved or None
         if no message was saved so far
         '''
+        raise NotImplementedError(
+            "You need to implement this in your derived class")
 
     def set_last_message_id(self, id):
         '''
         Saves the id of the las message that was saved
         '''
+        raise NotImplementedError(
+            "You need to implement this in your derived class")
 
 
 class FileBackend(BaseBackend):
@@ -106,7 +104,7 @@ class FileBackend(BaseBackend):
             file_h.write('{}\n'.format(id_))
 
 
-class HipchatMessageFilterer(object):
+class HipMessage(object):
     '''
     Class that gets all messages from a given room, filters them through
     the classes from filter_classes and returns them when get_newest_messages
@@ -164,27 +162,9 @@ class HipchatMessageFilterer(object):
 
     def process_message(self, msg):
         '''
-        Method that takes as only argument a message and processes it
+        This is the method you override in your derived class.
+        Method that takes as only argument a message and processes it.
         '''
 
     def run(self):
         self.get_newest_messages()
-
-
-# This is all the code you need to write
-
-class MyFilter(BaseFilter):
-    mandatory_fields = ['message_links']
-
-
-class MyHipchatMessageFilterer(HipchatMessageFilterer):
-    message_backend_class = FileBackend
-    filter_classes = (MyFilter,)
-
-    def process_message(self, msg):
-        import pprint
-        pprint.pprint(msg)
-
-
-instance = MyHipchatMessageFilterer(TOKEN, 'Tech_stuff')
-instance.run()
