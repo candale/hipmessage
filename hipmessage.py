@@ -1,4 +1,7 @@
 import os
+import datetime
+import dateutil.tz
+
 from hypchat import HypChat
 
 
@@ -54,7 +57,7 @@ class BaseFilter(object):
 class BaseBackend(object):
     '''
     Class that exposes two methods, get_last_message_id and
-    set_last_message_id. This ID is used to get the latest messages
+    set_last_message_id.self._room_name,  This ID is used to get the latest messages
     from a room, without getting the ones that were already processed
     '''
 
@@ -75,12 +78,11 @@ class BaseBackend(object):
 
 
 class FileBackend(BaseBackend):
-    _FILE_PATH = '{}_last_message_db.info'
+    _FILE_PATH = 'last_message_db.info'
     DATE_SAVE_PATTERN = '%Y %m %d %H:%M:%S.%f'
 
-    def __init__(self, file_path=None):
-        if file_path is not None:
-            self._FILE_PATH = file_path
+    def __init__(self, room_name=None):
+        self._room_name = room_name
 
     def _get_db_file(self):
         if os.path.isfile(self._FILE_PATH):
@@ -100,7 +102,12 @@ class FileBackend(BaseBackend):
         return last_id or None
 
     def set_last_message_id(self, id_):
-        with open(self._FILE_PATH, 'w') as file_h:
+        if self._room_name is not None:
+            file_name = '{}_{}'.format(self._room_name, self._FILE_PATH)
+        else:
+            file_name = self._FILE_PATH
+
+        with open(file_name, 'w') as file_h:
             file_h.write('{}\n'.format(id_))
 
 
@@ -112,7 +119,7 @@ class HipMessage(object):
     '''
 
     # A class that has implemented two methods
-    #   - set_last_message_id()
+    #   - set_last_message_id(self._room_name, )
     #   - get_last_message_id()
     message_backend_class = None
 
@@ -123,10 +130,10 @@ class HipMessage(object):
 
     def __init__(self, token, room_name):
         self._token = token
-        self._hipchat_client = HypChat(token)
-        self._message_backend = self.message_backend_class()
         self._room_name = room_name
+        self._hipchat_client = HypChat(token)
         self._room = self._hipchat_client.get_room(self.get_room_id(room_name))
+        self._message_backend = self.message_backend_class(self._room_name)
 
     def get_room_id(self, room_name):
         rooms = self._hipchat_client.rooms()
@@ -143,12 +150,37 @@ class HipMessage(object):
                 map(lambda cls: cls().is_ok(message), self.filter_classes))
         return True
 
+    def process_complete_history(self):
+        date = datetime.datetime.utcnow()
+        newest_id = None
+
+        while True:
+            messages_count = 0
+            messages = self._room.history(
+                maxResults=1000, date=date, reverse=False)
+            for message in messages['items']:
+                messages_count += 1
+                if self.is_message_valid(message) is False:
+                    continue
+
+                self.process_message(message)
+                newest_id = newest_id or message['id']
+
+            date = message['date']
+
+            if messages_count < 1000:
+                return newest_id
+
     def get_newest_messages(self, max_results=500):
         last_message_id = self._message_backend.get_last_message_id()
 
         params = {}
         if last_message_id is not None:
             params = {'not_before': last_message_id}
+        else:
+            newest_id = self.process_complete_history()
+            self._message_backend.set_last_message_id(newest_id)
+            return
 
         last_message = None
         # The messages come in the order oldest to newest
